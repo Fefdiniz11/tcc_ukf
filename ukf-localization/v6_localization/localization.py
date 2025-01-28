@@ -9,57 +9,48 @@ import time
 session = qi.Session()
 
 def main():
-    # Settings for plotting and saving data
+
     PLOT = 1
     PLOT_STEP = 10
     FILENAME = "output.txt"
-    
-    # Arrays to store data
-    x_prior_array = []
-    p_prior_array = []
-    x_post_array = []
-    p_post_array = []
-    dt_array = []
 
-    # Logging variables
+    # Arrays to store prediction and update data for later analysis
+    x_prior_array = []  # Predicted state
+    p_prior_array = []  # Predicted covariance
+    x_post_array = []   # Updated state
+    p_post_array = []   # Updated covariance
+    dt_array = []       # Time steps between updates
+
     i = 0
     PRINT_STEP = 400
 
     # MAP
-    # Field map with known landmarks
     field_map = { 
-        64: np.array([[2.0, -0.5]]).T, 
-        108: np.array([[2.0, 0.5]]).T 
+        64: np.array([[2.0, -0.5]]).T,  # Landmark 64 position
+        108: np.array([[2.0, 0.5]]).T   # Landmark 108 position
     }
 
     logging.info("Creating RobotUKF object...")
     ukf = RobotUKF(dt=0.8, session=session)
 
     # Parameter initialization
-    # Initial state of the robot [x, y]
-    ukf.x = np.array([0, 0])
+    ukf.x = np.array([0, 0])                 # Initial robot state [x, y]
+    ukf.P = np.diag([0.3, 0.3])              # Initial uncertainty covariance matrix
+    ukf.Q = np.diag([0.3**2, 0.3**2])        # Process noise covariance
+    ukf.R = np.diag([0.0825**2, 0.0825**2])  # Measurement noise covariance
 
-    # Initial uncertainty covariance
-    ukf.P = np.diag([0.3, 0.3])
-
-    # Process uncertainty
-    ukf.Q = np.diag([0.3**2, 0.3**2])
-
-    # Measurement uncertainty
-    ukf.R = np.diag([0.0825**2, 0.0825**2])
-
-    # Localization loop
+    # Start localization
     unboard.is_calibrated = True
     prev_time = time.time()
 
     while unboard.run_localization:
-        # PREDICTION
+        # PREDICTION STEP
         current_time = time.time()
         dt = current_time - prev_time
         prev_time = current_time
         ukf.predict(dt=dt)
 
-        # Debug logging
+        # Log prediction information at regular intervals
         if (i % PRINT_STEP) == 0:
             logging.debug("Prediction")
             logging.debug("x: %s", ukf.x[0])
@@ -67,33 +58,34 @@ def main():
             logging.debug("P: %s", ukf.P[0, 0])
             logging.debug("P: %s", ukf.P[1, 1])
 
-        # UPDATE
+        # UPDATE STEP
         if not unboard.got_landmark:
+            # If no landmark is detected, perform prediction-only update
             ukf.update(z=None)
         else:
+            # If landmarks are detected, update the state using measurements
             detected_landmarks = unboard.landmarks
             try:
                 for lmark in detected_landmarks:
                     lmark_id = lmark[0][0][0]
-                    z = np.array([lmark[1][0], lmark[2][0]])
-                    lmark_real_pos = field_map.get(lmark_id)
-                    ukf.update(z, lmark_real_pos)
+                    z = np.array([lmark[1][0], lmark[2][0]])  # Detected position
+                    lmark_real_pos = field_map.get(lmark_id)  # Real landmark position
+                    ukf.update(z, lmark_real_pos)             # Perform UKF update
                 
                 # If two landmarks are detected, calculate the midpoint
                 if len(detected_landmarks) == 2:
                     lmark1_real_pos = field_map.get(detected_landmarks[0][0][0])
                     lmark2_real_pos = field_map.get(detected_landmarks[1][0][0])
                     
-                    # Calculate the midpoint between the two landmarks
                     midpoint = (lmark1_real_pos + lmark2_real_pos) / 2
                     
-                    # Adjust the robot's position estimate to be relative to the midpoint
+                    # Adjust the robot's position to be relative to the midpoint
                     ukf.x[:2] = ukf.x[:2] - midpoint[:, 0]
                     
             except Exception:
                 pass
         
-        # Uncertainty check before saving data
+        # Check uncertainties and save data
         std_dev_x = np.sqrt(ukf.P[0, 0])
         std_dev_y = np.sqrt(ukf.P[1, 1])
 
@@ -104,11 +96,12 @@ def main():
             logging.debug("P: %s", ukf.P[0, 0])
             logging.debug("P: %s", ukf.P[1, 1])
             
+            # Save robot's current state and covariance to shared variables
             unboard.X = ukf.x[0]
             unboard.Y = ukf.x[1]
             unboard.P = ukf.P
 
-            # Save data to arrays for later output to file
+            # Store data for file output
             dt_array.append(dt)
             x_prior_array.append(ukf.x.copy())
             p_prior_array.append(ukf.P.copy())
@@ -117,7 +110,7 @@ def main():
 
         i += 1
 
-        # Save data to file
+        # Save all data to the output file
         with open(FILENAME, "w") as f:
             for x_prior, p_prior, x_post, p_post, dt in zip(x_prior_array, p_prior_array, x_post_array, p_post_array, dt_array):
                 f.write(str(dt))
@@ -137,7 +130,6 @@ def main():
                         f.write(str(p) + ",")
                 f.write("\n")
 
-    # Final position
     logging.info("Final position: %s", ukf.x)
     logging.info("Final covariance: %s", ukf.P)
 
