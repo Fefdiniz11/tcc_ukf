@@ -1,7 +1,5 @@
 # Trabalho de Conclusão de Curso de Engenharia Eletrônica
 
-## Introdução Geral
-
 Este projeto implementa um sistema de localização baseado no Filtro de Kalman Unscented (UKF) para um robô humanoide. O sistema visa integrar percepção, estimativa de posição e controle de movimento para navegação precisa em ambientes controlados. O robô utilizado é o NAO V6, amplamente aplicado em pesquisa e competições como a RoboCup.
 
 ## Tutorial: Rodando o UKF no Robô NAO
